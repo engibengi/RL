@@ -315,7 +315,7 @@ def single_agent_hunt_train_loop(
             # track cooperation
             # # How? If reward shared is roughly equal to stag reward,
             # # count the step towards cooperation
-            if abs(r_scaled - 1.0) < 1e-2:
+            if abs(r1 - stag_rew) < 1e-2:
                 stag_catches += 1
             
             if abs(r1 - 1.0) < 1e-2:

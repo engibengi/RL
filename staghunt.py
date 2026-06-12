@@ -19,7 +19,7 @@ HC = 64
 LR_ACTOR = 0.0005
 LR_CRITIC = 0.001
 MAX_STEPS = 200
-EPISODES = 20000
+EPISODES = 25000
 GAME_OBS = 2 * 2 + 2 * 1 + 2 * MAX_PLANTS # 2 coords per agent (2 agents), 2 coords per stag (1 stag), 2coords per plant (MAX_PLANTS plants)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 

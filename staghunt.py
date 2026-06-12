@@ -77,9 +77,11 @@ def sample_action(probs: torch.tensor) -> int:
 
 def hunt_train_loop(
     env, # The gym env
-    actor, # The actor model
-    critic, # The critic model
-    actor_optimizer, # The torch optimizer for the actor model
+    actor1, # The agent1 actor model
+    actor2, # The agent2 actor model
+    critic, # The critic  model
+    actor1_optimizer, # The torch optimizer for the first actor model
+    actor2_optimizer, # The torch optimizer for the second actor model
     critic_optimizer, # The torch optimizer for the critic model
     n_episodes: int = EPISODES, # The episodes to run (episodes ~ # games, not # steps)
     gamma: float = 0.99, # The discount for the advantage
@@ -94,7 +96,8 @@ def hunt_train_loop(
             "total_reward_2":     [],   # sum of rewards for agent 2 over the episode
             "mean_reward_1":      [],   # avg reward per step for agent 1
             "mean_reward_2":      [],   # avg reward per step for agent 2
-            "actor_loss":         [],   # mean actor loss over the episode
+            "actor1_loss":        [],   # mean actor2 loss over the episode
+            "actor2_loss":        [],   # mean actor2 loss over the episode
             "critic_loss":        [],   # mean critic loss over the episode
             "stag_catches":       [],   # amount of stags catched
             "plants_harvested_1": [],   # plants harvested by agent 1
@@ -113,7 +116,8 @@ def hunt_train_loop(
  
         ep_rewards_1      = []
         ep_rewards_2      = []
-        ep_actor_losses   = []
+        ep_actor1_losses = []
+        ep_actor2_losses  = []
         ep_critic_losses  = []
         stag_catches      = 0
         step              = 0
@@ -125,8 +129,8 @@ def hunt_train_loop(
         while not done:
  
             # select action (probabilistic since we are training)
-            probs1 = torch.softmax(actor(obs1),dim=-1)
-            probs2 = torch.softmax(actor(obs2),dim=-1)
+            probs1 = torch.softmax(actor1(obs1),dim=-1)
+            probs2 = torch.softmax(actor2(obs2),dim=-1)
 
             # ADD THIS
             if step == 0 and ep % 500 == 0 and ep != 0:
@@ -195,16 +199,25 @@ def hunt_train_loop(
 
             entropy_coef = max(0.001, 0.05 * (0.9998 ** ep))
             # Add entropy to enhance exploration
-            entropy = -(probs1 * torch.log(probs1 + 1e-8)).sum() + -(probs2 * torch.log(probs2 + 1e-8)).sum()
+            entropy1 = -(probs1 * torch.log(probs1 + 1e-8)).sum()
 
-            actor_loss = -(log_prob1 + log_prob2) * adv_detached - (entropy_coef * entropy)
+            actor1_loss = -(log_prob1) * adv_detached - (entropy_coef * entropy1)
  
-            actor_optimizer.zero_grad()
-            actor_loss.backward()
-            actor_optimizer.step()
+            actor1_optimizer.zero_grad()
+            actor1_loss.backward()
+            actor1_optimizer.step()
+
+            entropy2 = -(probs2 * torch.log(probs2 + 1e-8)).sum()
+
+            actor2_loss = -(log_prob2) * adv_detached - (entropy_coef * entropy2)
+            
+            actor2_optimizer.zero_grad()
+            actor2_loss.backward()
+            actor2_optimizer.step()
  
             # --- bookkeeping ---
-            ep_actor_losses.append(actor_loss.item())
+            ep_actor1_losses.append(actor1_loss.item())
+            ep_actor2_losses.append(actor2_loss.item())
             ep_critic_losses.append(critic_loss.item())
  
             obs1 = obs1_next
@@ -216,7 +229,8 @@ def hunt_train_loop(
         total_reward_2   = float(np.sum(ep_rewards_2))
         mean_reward_1    = total_reward_1/step
         mean_reward_2    = total_reward_2/step
-        mean_actor_loss  = float(np.mean(np.abs(ep_actor_losses)))
+        mean_actor1_loss = float(np.mean(np.abs(ep_actor1_losses)))
+        mean_actor2_loss = float(np.mean(np.abs(ep_actor2_losses)))
         mean_critic_loss = float(np.mean(ep_critic_losses))
  
         logs["episode"].append(ep)
@@ -224,7 +238,8 @@ def hunt_train_loop(
         logs["total_reward_2"].append(total_reward_2)
         logs["mean_reward_1"].append(mean_reward_1)
         logs["mean_reward_2"].append(mean_reward_2)
-        logs["actor_loss"].append(mean_actor_loss)
+        logs["actor1_loss"].append(mean_actor1_loss)
+        logs["actor2_loss"].append(mean_actor2_loss)
         logs["critic_loss"].append(mean_critic_loss)
         logs["stag_catches"].append(stag_catches)
         logs["plants_harvested_1"].append(harvested1)
@@ -239,7 +254,8 @@ def hunt_train_loop(
                 f"StagCatch: {stag_catches:.2f} | "
                 f"Harvested1: {harvested1} | "
                 f"Harvested2: {harvested2} | "
-                f"ActorL: {mean_actor_loss:.4f} | "
+                f"Actor1L: {mean_actor1_loss:.4f} | "
+                f"Actor2L: {mean_actor2_loss:.4f} | "
                 f"CriticL: {mean_critic_loss:.4f} | "
                 f"Steps: {step}"
             )
@@ -387,7 +403,7 @@ def single_agent_hunt_train_loop(
 
 # Test functions
 
-def hunt_eval_loop(env, actor, n_episodes=100, log_every=10):
+def hunt_eval_loop(env, actor1, actor2, n_episodes=100, log_every=10):
     logs = {
             "episode":                [],
             "total_reward_cumul":     [],   # sum of shared rewards over the episode
@@ -413,8 +429,8 @@ def hunt_eval_loop(env, actor, n_episodes=100, log_every=10):
         while not done:
  
             # select action (since we are testing, take highest)
-            probs1 = torch.softmax(actor(obs1), dim=-1) 
-            probs2 = torch.softmax(actor(obs2), dim=-1)
+            probs1 = torch.softmax(actor1(obs1), dim=-1) 
+            probs2 = torch.softmax(actor2(obs2), dim=-1)
  
             a1 = greedy_action(probs1)
             a2 = greedy_action(probs2)
@@ -579,6 +595,8 @@ def plot_logs(logs: dict, window: int = 25, file_name="training_curves.png"):
         "mean_reward_2":          "Mean Step Reward - agent 2",
         "mean_reward_cumul":      "Mean Step Reward between 2 agents",
         "actor_loss":             "Actor Loss",
+        "actor1_loss":            "Actor 1 Loss",
+        "actor2_loss":            "Actor 2 Loss",
         "critic_loss":            "Critic Loss",
         "stag_catches":           "Stags caught during the episode",
         "plants_harvested_1":     "Plants harvested by agent 1",
@@ -593,6 +611,8 @@ def plot_logs(logs: dict, window: int = 25, file_name="training_curves.png"):
         "mean_reward_2":           "lightcoral",
         "mean_reward_cumul":       "cornflowerblue",
         "actor_loss":              "tomato",
+        "actor1_loss":             "tomato",
+        "actor2_loss":             "tomato",
         "critic_loss":             "darkorange",
         "stag_catches":            "seagreen",
         "plants_harvested_1":      "aquamarine",
@@ -632,20 +652,24 @@ def plot_logs(logs: dict, window: int = 25, file_name="training_curves.png"):
 
 # Running
 
-actor = Actor(game="Hunt").to(device=DEVICE)
+actor1 = Actor(game="Hunt").to(device=DEVICE)
+actor2 = Actor(game="Hunt").to(device=DEVICE)
 critic = Critic(game="Hunt").to(device=DEVICE)
-actor_optimizer  = torch.optim.Adam(params= actor.parameters(), lr=LR_ACTOR)
+actor1_optimizer = torch.optim.Adam(params=actor1.parameters(), lr=LR_ACTOR)
+actor2_optimizer = torch.optim.Adam(params=actor2.parameters(), lr=LR_ACTOR)
 critic_optimizer = torch.optim.Adam(params=critic.parameters(), lr=LR_CRITIC)
 
-actor.train()
+actor1.train()
+actor2.train()
 critic.train()
 
-logs = hunt_train_loop(env, actor, critic, actor_optimizer, critic_optimizer)
-actor.eval()
+logs = hunt_train_loop(env, actor1, actor2, critic, actor1_optimizer, actor2_optimizer, critic_optimizer)
+actor1.eval()
+actor2.eval()
 
 plot_logs(logs, window=100, file_name="base_training_logs.png")
 
-eval_logs = hunt_eval_loop(env, actor, log_every=10)
+eval_logs = hunt_eval_loop(env, actor1, actor2, log_every=10)
 
 plot_logs(eval_logs, file_name="base_test_logs.png")
 

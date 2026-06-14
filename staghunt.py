@@ -688,6 +688,9 @@ plot_logs(eval_logs_pursuit, file_name="pursuit_test_logs.png")
 
 import pickle
 
+torch.save(actor, "self.pt")
+torch.save(actor_for_random, "random.pt")
+torch.save(actor_for_pursuit, "pursuit.pt")
 print("Performance dual agent:")
 print(f"AVG TOTAL REWARD:     {np.mean(eval_logs['total_reward_cumul']):>3.2f}")
 print(f"AVG STAGS CAUGHT:     {np.mean(eval_logs['stag_catches']):>3.2f}")
